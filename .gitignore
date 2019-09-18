@@ -1,0 +1,25 @@
+### macOS template
+# General
+.DS_Store
+.AppleDouble
+.LSOverride
+
+### Maven template
+target/
+pom.xml.*
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+
+# IntelliJ
+*.iws
+*.iml
+out/
+.idea_modules/
+.idea/
+.project/
+etc/application.custom.properties
+
+# Project
+*.log
