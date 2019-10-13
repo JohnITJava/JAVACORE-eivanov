@@ -1,39 +1,27 @@
 package com.gridu.exsort;
 
-import java.io.*;
-import java.util.Arrays;
-import java.util.List;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.util.logging.Level;
 
-import static com.gridu.exsort.FilesHandler.sortCollectionInsensitive;
 import static com.gridu.exsort.LoggerHandler.logger;
 
 public class ExternalSort {
     private static final int MAX_PART_SIZE = 1; // Max part size in Mbs
     private static String inputPathFile;
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
         logger.log(Level.INFO, "--- Start application ---");
 
         enterPathToFile();
 
         FilesHandler filesHandler = new FilesHandler(inputPathFile, MAX_PART_SIZE);
 
-        RandomAccessFile raf = null;
+        filesHandler.divideIntoSortedParts();
+        filesHandler.mergingIntoOne();
 
-        try {
-            raf = filesHandler.openFileForReading();
-        } catch (IOException e) {
-            logger.log(Level.SEVERE, Arrays.toString(e.getStackTrace()));
-        }
-
-        for (int i = 0; i < filesHandler.getPartsCount(); i++) {
-            List<String> strings = filesHandler.readPartAsStrings(raf, i);
-            sortCollectionInsensitive(strings);
-            filesHandler.savePartStringsInFile(strings, i);
-        }
-
-        filesHandler.closeFileStream(raf);
+        logger.log(Level.INFO, "--- Stop application ---");
     }
 
     private static void enterPathToFile() {
