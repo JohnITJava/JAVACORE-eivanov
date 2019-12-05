@@ -2,6 +2,7 @@ package com.gridu.exsort;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.commons.lang3.RandomStringUtils;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -11,7 +12,6 @@ import java.util.*;
 import java.util.logging.Level;
 
 import static com.gridu.exsort.LoggerHandler.logger;
-
 @Data
 @NoArgsConstructor
 public class FilesHandler {
@@ -308,5 +308,26 @@ public class FilesHandler {
 
         chunksBufferStrings.remove(chunkNext);
         return chunkNext;
+    }
+
+    public static void createFileWithRandomSymbols() throws IOException {
+        File file = new File("generatedInput.txt");
+        FileOutputStream fos = new FileOutputStream(file);
+
+        BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(fos));
+
+        String randomString = null;
+        int randomCount = 0;
+
+        while (file.length() < 5000000) {
+            randomCount = new Random().nextInt(10) + 1;
+            randomString = RandomStringUtils.random(randomCount, true, true);
+
+            bw.write(randomString);
+            bw.newLine();
+        }
+
+        bw.close();
+        System.out.println(file.length());
     }
 }

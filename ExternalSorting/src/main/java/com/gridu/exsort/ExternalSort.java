@@ -11,7 +11,7 @@ public class ExternalSort {
     private static final int MAX_PART_SIZE = 1; // Max part size in Mbs
     private static String inputPathFile;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         logger.log(Level.INFO, "--- Start application ---");
 
         enterPathToFile();
