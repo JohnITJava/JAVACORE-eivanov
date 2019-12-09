@@ -1,6 +1,5 @@
 package com.gridu.exsort;
 
-import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -21,12 +20,11 @@ public class FilesHandler {
     private byte[] buffer;
     private int partsCount;
     private int partSizeMb;
-    private List<String> strings = new LinkedList<>();
+    private List<String> outputStrings = new LinkedList<>();
     private Long fileSize;
     private Long filePointer;
-    private List<String> preMergedStringsBuffer;
     private List<BufferedReader> bafList;
-    private FileWriter outputWriter;
+    private int partChunkStringsSize;
 
     public FilesHandler(String inputFilePath, int partSizeMb) {
         this.buffer = new byte[partSizeMb * 1024 * 1024];
@@ -38,7 +36,7 @@ public class FilesHandler {
     }
 
     public static void sortCollectionInsensitive(List<String> list) {
-        logger.log(Level.INFO, "Start to sort collection of strings");
+        logger.log(Level.INFO, "Start to sort collection of outputStrings");
         list.sort(String.CASE_INSENSITIVE_ORDER);
     }
 
@@ -75,7 +73,7 @@ public class FilesHandler {
     }
 
     public void savePartStringsInFile(List<String> strings, int part) {
-        logger.log(Level.INFO, String.format("Start to write list of strings in [%s]", (part + ".txt")));
+        logger.log(Level.INFO, String.format("Start to write list of outputStrings in [%s]", (part + ".txt")));
         FileWriter writer = null;
         try {
             writer = new FileWriter(String.format("%s.txt", part));
@@ -124,9 +122,9 @@ public class FilesHandler {
             logger.log(Level.SEVERE, e.toString());
         }
 
-        strings.clear();
+        outputStrings.clear();
 
-        logger.log(Level.INFO, "Starting convert buffer in strings array list");
+        logger.log(Level.INFO, "Starting convert buffer in outputStrings array list");
 
 
         //Convert byte array in buffer as line
@@ -138,7 +136,7 @@ public class FilesHandler {
         String line = "-1";
         try {
             for (line = r.readLine(); line != null; line = r.readLine()) {
-                strings.add(line);
+                outputStrings.add(line);
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, e.toString());
@@ -150,8 +148,8 @@ public class FilesHandler {
             }
         }
 
-        logger.log(Level.INFO, "Return strings array");
-        return strings;
+        logger.log(Level.INFO, "Return outputStrings array");
+        return outputStrings;
     }
 
     public void divideIntoSortedParts() {
@@ -168,6 +166,11 @@ public class FilesHandler {
             List<String> strings = readPartAsStrings(raf, i);
             sortCollectionInsensitive(strings);
             savePartStringsInFile(strings, i);
+
+            //Calculate personal buffer part string array size, just once
+            if (i == 0) {
+                partChunkStringsSize = (strings.size() * 10) / 100;
+            }
         }
         closeFileStream(raf);
     }
@@ -224,6 +227,8 @@ public class FilesHandler {
 
     public void mergingIntoOne() {
         List<BufferedReader> bafList = openStreamsForAllParts();
+        HashMap<Integer, LinkedList<String>> partsChunksWithStrings = getFirstStringsArraysFromAllParts(bafList);
+        outputStrings.clear();
 
         //String from part of stream via reading it
         String chunkString = null;
@@ -233,14 +238,18 @@ public class FilesHandler {
         //Map contains num of part stream and their string
         Map<Integer, String> chunksBufferStrings = new HashMap<>();
         FileWriter writerOutput = openOutputWriterStream();
+
         List<String> stringValues = new ArrayList<>();
 
         //Number of part stream which string will be got output for comparison
         int chunkNext = -1;
 
-        logger.log(Level.INFO, "Begin merging strings while parts are not empty");
+        logger.log(Level.INFO, "Begin merging outputStrings while parts are not empty");
 
         while (bafList.size() != endedBafs.size()) {
+
+
+
 
             if (chunkNext < 0) {
                 int i = 0;
@@ -259,7 +268,7 @@ public class FilesHandler {
                     }
                 }
 
-                //Add in intermediate strings array all chunks strings
+                //Add in intermediate outputStrings array all chunks outputStrings
                 stringValues.addAll(chunksBufferStrings.values());
                 chunkNext = extendHelper(chunksBufferStrings, writerOutput, stringValues);
 
@@ -292,8 +301,48 @@ public class FilesHandler {
         }
     }
 
-    //Method that string array sort and write min in file and return number of part containing this string
-    public int extendHelper(Map<Integer, String> chunksBufferStrings,
+
+    /**
+     * Getting hashMap with number of part and his buffer outputStrings array
+     */
+    private HashMap<Integer, LinkedList<String>> getFirstStringsArraysFromAllParts(List<BufferedReader> bafList) {
+        HashMap<Integer, LinkedList<String>> partsChunksStrings = new HashMap<>(bafList.size());
+        int partCount = 0;
+
+        for (BufferedReader reader : bafList) {
+
+            LinkedList<String> partChunk = getStringsInChunkPart(reader);
+            partsChunksStrings.put(partCount++, partChunk);
+        }
+
+        return partsChunksStrings;
+    }
+
+
+    /**
+     * Return buffer outputStrings array from definite reader of the part
+     */
+    private LinkedList<String> getStringsInChunkPart(BufferedReader reader) {
+        logger.log(Level.INFO, "Begin load outputStrings of part in his personal buf array");
+
+        LinkedList<String> partChunk = new LinkedList<>();
+        String string = null;
+
+        for (int i = 0; i < partChunkStringsSize; i++) {
+
+            try {
+                string = reader.readLine();
+            } catch (IOException e) {
+                logger.log(Level.SEVERE, e.toString());
+            }
+
+            partChunk.add(string);
+        }
+        return partChunk;
+    }
+
+    //Method of string array sort and write min in file and return number of part containing this string
+    private int extendHelper(Map<Integer, String> chunksBufferStrings,
                             FileWriter writerOutput,
                             List<String> stringValues) {
         int chunkNext;

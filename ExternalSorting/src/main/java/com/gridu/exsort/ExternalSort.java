@@ -9,6 +9,7 @@ import static com.gridu.exsort.LoggerHandler.logger;
 
 public class ExternalSort {
     private static final int MAX_PART_SIZE = 1; // Max part size in Mbs
+    private static final int PART_CHUNK_STRINGS_FACTOR = 10; //10(%) - size personal buffer chunk of all strings part
     private static String inputPathFile;
 
     public static void main(String[] args) throws IOException {
