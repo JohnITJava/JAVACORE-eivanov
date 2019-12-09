@@ -1,10 +1,12 @@
 package com.gridu.exsort;
 
 import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.apache.commons.lang3.RandomStringUtils;
 
 import java.io.*;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -12,7 +14,7 @@ import java.util.*;
 import java.util.logging.Level;
 
 import static com.gridu.exsort.LoggerHandler.logger;
-@Data
+@Getter
 @NoArgsConstructor
 public class FilesHandler {
     private Path pathToInputFile;
@@ -127,20 +129,15 @@ public class FilesHandler {
         logger.log(Level.INFO, "Starting convert buffer in strings array list");
 
 
-        BufferedReader r = null;
-        try {
-            r = new BufferedReader(
-                    new InputStreamReader(
-                            new ByteArrayInputStream(buffer), "windows-1251"));
-        } catch (UnsupportedEncodingException e) {
-            logger.log(Level.SEVERE, e.toString());
-        }
+        //Convert byte array in buffer as line
+        BufferedReader r = new BufferedReader(
+                new InputStreamReader(
+                        new ByteArrayInputStream(buffer), Charset.defaultCharset()));
 
         if (r == null) return null;
-
+        String line = "-1";
         try {
-            for (String line = r.readLine(); line != null; line = r.readLine()) {
-                //if (line.contains("-1")) break;
+            for (line = r.readLine(); line != null; line = r.readLine()) {
                 strings.add(line);
             }
         } catch (IOException e) {
@@ -218,7 +215,6 @@ public class FilesHandler {
     }
 
     public void writeStringOutput(FileWriter writer, String string) {
-        logger.log(Level.INFO, String.format("Writing minimal string in file [%s]", string));
         try {
             writer.write(string + System.lineSeparator());
         } catch (IOException e) {
@@ -229,14 +225,20 @@ public class FilesHandler {
     public void mergingIntoOne() {
         List<BufferedReader> bafList = openStreamsForAllParts();
 
+        //String from part of stream via reading it
         String chunkString = null;
 
         List<BufferedReader> endedBafs = new LinkedList<>();
+
+        //Map contains num of part stream and their string
         Map<Integer, String> chunksBufferStrings = new HashMap<>();
         FileWriter writerOutput = openOutputWriterStream();
         List<String> stringValues = new ArrayList<>();
 
+        //Number of part stream which string will be got output for comparison
         int chunkNext = -1;
+
+        logger.log(Level.INFO, "Begin merging strings while parts are not empty");
 
         while (bafList.size() != endedBafs.size()) {
 
@@ -257,8 +259,9 @@ public class FilesHandler {
                     }
                 }
 
+                //Add in intermediate strings array all chunks strings
                 stringValues.addAll(chunksBufferStrings.values());
-                chunkNext = extendHelper(chunkString, chunksBufferStrings, writerOutput, stringValues);
+                chunkNext = extendHelper(chunksBufferStrings, writerOutput, stringValues);
 
             } else {
                 try {
@@ -277,7 +280,7 @@ public class FilesHandler {
 
                 stringValues.clear();
                 stringValues.addAll(chunksBufferStrings.values());
-                chunkNext = extendHelper(chunkString, chunksBufferStrings, writerOutput, stringValues);
+                chunkNext = extendHelper(chunksBufferStrings, writerOutput, stringValues);
             }
         }
 
@@ -289,16 +292,18 @@ public class FilesHandler {
         }
     }
 
-    public int extendHelper(String chunkString,
-                            Map<Integer, String> chunksBufferStrings,
+    //Method that string array sort and write min in file and return number of part containing this string
+    public int extendHelper(Map<Integer, String> chunksBufferStrings,
                             FileWriter writerOutput,
                             List<String> stringValues) {
         int chunkNext;
         FilesHandler.sortCollectionInsensitive(stringValues);
         String minString = stringValues.get(0);
 
-        writeStringOutput(writerOutput, chunkString);
+        //Save min string in part
+        writeStringOutput(writerOutput, minString);
 
+        //Calculate from what part this string
         chunkNext = chunksBufferStrings.entrySet()
                 .stream()
                 .filter(entry -> entry.getValue().equals(minString))
@@ -328,6 +333,5 @@ public class FilesHandler {
         }
 
         bw.close();
-        System.out.println(file.length());
     }
 }

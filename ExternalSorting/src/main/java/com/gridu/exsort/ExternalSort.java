@@ -14,6 +14,8 @@ public class ExternalSort {
     public static void main(String[] args) throws IOException {
         logger.log(Level.INFO, "--- Start application ---");
 
+        //FilesHandler.createFileWithRandomSymbols();
+
         enterPathToFile();
 
         FilesHandler filesHandler = new FilesHandler(inputPathFile, MAX_PART_SIZE);
