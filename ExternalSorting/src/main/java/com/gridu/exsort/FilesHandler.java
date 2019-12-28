@@ -41,6 +41,7 @@ import static com.gridu.exsort.LoggerHandler.logger;
 @Getter
 @NoArgsConstructor
 public class FilesHandler {
+    public static final String SORTED_OUTPUT_FILEPATH = "sortedOutput.txt";
     private Path pathToInputFile;
     private byte[] buffer;
     private int partsCount;
@@ -65,13 +66,12 @@ public class FilesHandler {
         preOutputSortBuffer = new TreeSet<>(MapEntry.compareByValueInsensitiveOrder);
     }
 
-    public static void sortCollectionInsensitive(List<String> list) {
-        logger.log(Level.INFO, "Start to sort collection of outputStrings");
-        list.sort(String.CASE_INSENSITIVE_ORDER);
-    }
-
-    public static void createFileWithRandomSymbols() throws IOException {
-        File file = new File("generatedInput.txt");
+    public static void createFileWithRandomSymbols(int sizeinMb,
+                                                   String fileName,
+                                                   int maxStringLength,
+                                                   boolean includeLetters,
+                                                   boolean includeNumbers) throws IOException {
+        File file = new File(fileName);
         FileOutputStream fos = new FileOutputStream(file);
 
         BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(fos));
@@ -79,14 +79,14 @@ public class FilesHandler {
         String randomString;
         int randomCount = 1;
 
-        while (file.length() < 5000000) {
-            randomCount = new Random().nextInt(10) + 1;
-            randomString = RandomStringUtils.random(randomCount, true, true);
+        while (file.length() < sizeinMb * 1000000) {
+            randomCount = new Random().nextInt(maxStringLength) + 1;
+            randomString = RandomStringUtils.random(randomCount, includeLetters, includeNumbers);
 
             bw.write(randomString);
             bw.newLine();
         }
-        String lastRandomString = RandomStringUtils.random(randomCount, true, true);
+        String lastRandomString = RandomStringUtils.random(randomCount, includeLetters, includeNumbers);
         bw.write(lastRandomString);
         bw.flush();
         bw.close();
@@ -129,14 +129,19 @@ public class FilesHandler {
         closeFileStream(raf);
     }
 
-    public RandomAccessFile openFileForReading() throws IOException {
+    private static void sortCollectionInsensitive(List<String> list) {
+        logger.log(Level.INFO, "Start to sort collection of outputStrings");
+        list.sort(String.CASE_INSENSITIVE_ORDER);
+    }
+
+    private RandomAccessFile openFileForReading() throws IOException {
         logger.log(Level.INFO, String.format("Trying to get random access to [%s]", pathToInputFile));
         RandomAccessFile randomAccessFile = new RandomAccessFile(pathToInputFile.toFile(), "r");
         logger.log(Level.INFO, "Return random access stream for: " + pathToInputFile);
         return randomAccessFile;
     }
 
-    public boolean closeFileStream(RandomAccessFile randomAccessFile) {
+    private boolean closeFileStream(RandomAccessFile randomAccessFile) {
         logger.log(Level.INFO, String.format("Trying to close random access stream to [%s]", pathToInputFile));
         try {
             randomAccessFile.close();
@@ -147,7 +152,7 @@ public class FilesHandler {
         return true;
     }
 
-    public void savePartStringsInFile(List<String> strings, int part) {
+    private void savePartStringsInFile(List<String> strings, int part) {
         logger.log(Level.INFO, String.format("Start to write list of outputStrings in [%s]", (part + ".txt")));
         FileWriter writer = null;
         try {
@@ -174,7 +179,7 @@ public class FilesHandler {
         }
     }
 
-    public List<String> readPartAsStrings(RandomAccessFile randomAccessFile, int count) {
+    private List<String> readPartAsStrings(RandomAccessFile randomAccessFile, int count) {
 
         boolean lastPart = count == partsCount - 1;
 
@@ -197,6 +202,23 @@ public class FilesHandler {
             logger.log(Level.SEVERE, e.toString());
         }
 
+        //raf can trim our bytes in middle of string - we calculate back pointer
+        long bytesCountDueLineBreak = 0;
+        if (!lastPart && buffer[buffer.length - 1] != 10) {
+            for (int i = buffer.length - 1; i > 0; i--) {
+                bytesCountDueLineBreak++;
+                if (buffer[i] == 10) { //10 - byte of line breaker
+                    break;
+                }
+            }
+
+            try {
+                randomAccessFile.seek(randomAccessFile.getFilePointer() - bytesCountDueLineBreak);
+            } catch (IOException e) {
+                logger.log(Level.SEVERE, e.toString());
+            }
+        }
+
         outputStrings.clear();
 
         logger.log(Level.INFO, "Starting convert buffer in outputStrings array list");
@@ -207,13 +229,12 @@ public class FilesHandler {
                 new InputStreamReader(
                         new ByteArrayInputStream(buffer), Charset.defaultCharset()));
 
-        if (r == null) {
-            return null;
-        }
         String line;
         try {
             for (line = r.readLine(); line != null; line = r.readLine()) {
-                outputStrings.add(line);
+                if (!checkLineIsEmpty(line)) {
+                    outputStrings.add(line);
+                }
             }
         } catch (IOException e) {
             logger.log(Level.SEVERE, e.toString());
@@ -226,16 +247,23 @@ public class FilesHandler {
         }
 
         logger.log(Level.INFO, "Return outputStrings array");
+        if ((!lastPart && buffer[buffer.length - 1] != 10)) {
+            outputStrings.remove(outputStrings.size() - 1);
+        }
         return outputStrings;
     }
 
-    public void mergingIntoOne() {
+    private static boolean checkLineIsEmpty(String line) {
+        return line.trim().length() == 0;
+    }
+
+    public void mergingIntoOne(String fileOutputPath) {
         bafList = openStreamsForAllParts();
         partsChunksStrings = getFirstStringsArraysFromAllParts(bafList);
         outputStrings.clear();
 
         endedBafs = new LinkedHashSet<>();
-        FileWriter writerOutput = openOutputWriterStream();
+        FileWriter writerOutput = openOutputWriterStream(fileOutputPath);
 
         //First merging from all string chunks
         firstFillingPreOutputBuffer(partsChunksStrings);
@@ -272,7 +300,7 @@ public class FilesHandler {
         }
     }
 
-    public List<BufferedReader> openStreamsForAllParts() {
+    private List<BufferedReader> openStreamsForAllParts() {
         logger.log(Level.INFO, "Opening streams for all sorted chunks");
 
         BufferedReader baf = null;
@@ -291,18 +319,18 @@ public class FilesHandler {
         return bafList;
     }
 
-    public FileWriter openOutputWriterStream() {
-        logger.log(Level.INFO, "Opening stream for output file: [sortedOutput.txt]");
+    private FileWriter openOutputWriterStream(String filePath) {
+        logger.log(Level.INFO, "Opening stream for output file: [%s]", filePath);
         FileWriter writer = null;
         try {
-            writer = new FileWriter("sortedOutput.txt");
+            writer = new FileWriter(filePath);
         } catch (IOException e) {
             logger.log(Level.SEVERE, e.toString());
         }
         return writer;
     }
 
-    public void closeChunksStreams(Set<BufferedReader> bafs) {
+    private void closeChunksStreams(Set<BufferedReader> bafs) {
         logger.log(Level.INFO, "Closing random access file chunks streams");
 
         for (BufferedReader baf : bafs) {
@@ -314,7 +342,7 @@ public class FilesHandler {
         }
     }
 
-    public void writeStringsOutput(FileWriter writer, List<String> outputList) {
+    private void writeStringsOutput(FileWriter writer, List<String> outputList) {
         for (int i = 0; i < outputList.size(); i++) {
             try {
                 writer.write(outputList.get(i) + System.lineSeparator());
@@ -410,4 +438,19 @@ public class FilesHandler {
         return partChunk;
     }
 
+    private void eraseLastLine(String filePath) {
+        File file = new File(filePath);
+        try (RandomAccessFile f = new RandomAccessFile(file, "rw")) {
+            byte b;
+            long length = f.length() - 1;
+            do {
+                length -= 1;
+                f.seek(length);
+                b = f.readByte();
+            } while (b != 10 && length > 0);
+            f.setLength(length + 1);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

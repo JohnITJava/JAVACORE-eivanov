@@ -9,10 +9,10 @@ import static com.gridu.exsort.LoggerHandler.logger;
 
 public class ExternalSort {
     public static final int MAX_PART_SIZE = 1; // Max part size in Mbs
-    public static final int PART_CHUNK_STRINGS_FACTOR = 10; //10(%) - size personal buffer chunk of all strings part
+    public static final int PART_CHUNK_STRINGS_FACTOR = 5; //10(%) - size personal buffer chunk of all strings part
     private static String inputPathFile;
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
         logger.log(Level.INFO, "--- Start application ---");
 
         //FilesHandler.createFileWithRandomSymbols();
@@ -22,7 +22,7 @@ public class ExternalSort {
         FilesHandler filesHandler = new FilesHandler(inputPathFile, MAX_PART_SIZE);
 
         filesHandler.divideIntoSortedParts();
-        filesHandler.mergingIntoOne();
+        filesHandler.mergingIntoOne(FilesHandler.SORTED_OUTPUT_FILEPATH);
 
         logger.log(Level.INFO, "--- Stop application ---");
     }
