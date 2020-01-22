@@ -1,51 +1,53 @@
 package com.gridu.exsort;
 
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.logging.Level;
 
-import static com.gridu.exsort.LoggerHandler.logger;
-
+@Slf4j
 public class ExternalSort {
     public static final int MAX_PART_SIZE = 1; // Max part size in Mbs
-    public static final int PART_CHUNK_STRINGS_FACTOR = 5; //10(%) - size personal buffer chunk of all strings part
-    private static String inputPathFile;
+    public static final int PART_CHUNK_STRINGS_FACTOR = 10; //10(%) - size personal buffer chunk of all strings part
 
     public static void main(String[] args) {
-        logger.log(Level.INFO, "--- Start application ---");
+        log.info("--- Start application ---");
+        ExternalSort externalSort = new ExternalSort();
+        String inputPathFile = externalSort.enterPathToFile();
 
-        //FilesHandler.createFileWithRandomSymbols();
+        FileHandler fileHandler = new FileHandler(inputPathFile, MAX_PART_SIZE);
+        fileHandler.processInternalSorting();
 
-        enterPathToFile();
-
-        FilesHandler filesHandler = new FilesHandler(inputPathFile, MAX_PART_SIZE);
-
-        filesHandler.divideIntoSortedParts();
-        filesHandler.mergingIntoOne(FilesHandler.SORTED_OUTPUT_FILEPATH);
-
-        logger.log(Level.INFO, "--- Stop application ---");
+        log.info("--- Stop application ---");
     }
 
-    private static void enterPathToFile() {
+    private String enterPathToFile() {
         System.out.println("Enter path to file for sorting");
         BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+        String inputPath = null;
 
         while (true) {
             try {
-                inputPathFile = reader.readLine();
+                inputPath = reader.readLine();
             } catch (IOException e) {
                 e.printStackTrace();
-                logger.log(Level.SEVERE, e.getMessage());
+                log.error(e.getMessage());
             }
-
-            if (!inputPathFile.trim().isEmpty()) {
-                logger.log(Level.INFO, "Your path: " + inputPathFile);
+            if (StringUtils.isNotBlank(inputPath)) {
+                log.debug("Your path: " + inputPath);
                 break;
             } else {
                 System.out.println("Try again");
-                logger.log(Level.SEVERE, "WTF MAN?");
+                log.debug("Wrong Path?");
             }
         }
+        try {
+            reader.close();
+        } catch (IOException e) {
+            log.error(e.getMessage());
+        }
+        return inputPath;
     }
 }

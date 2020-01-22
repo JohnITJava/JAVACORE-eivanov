@@ -22,12 +22,17 @@ class SortFunctionalityTest {
 
     @Test
     void checkOutputFile_IsSorted() throws IOException {
-        FilesHandler.createFileWithRandomSymbols(2, testInputFilePath, 9, false, true);
+        FileUtils.createFileWithRandomSymbols(2,
+                                              testInputFilePath,
+                                              9,
+                                              false,
+                                              true);
+
         List<Integer> inputNums = readAllStringsAsNumsFromFile(testInputFilePath);
 
-        FilesHandler filesHandler = new FilesHandler(testInputFilePath, MAX_PART_SIZE);
-        filesHandler.divideIntoSortedParts();
-        filesHandler.mergingIntoOne(testOutputFilePath);
+        FileHandler fileHandler = new FileHandler(testInputFilePath, MAX_PART_SIZE);
+        fileHandler.divideIntoSortedParts();
+        fileHandler.mergingIntoOne(testOutputFilePath);
 
         List<Integer> outputNums = readAllStringsAsNumsFromFile(testOutputFilePath);
 
@@ -61,12 +66,17 @@ class SortFunctionalityTest {
 
     @Test
     void checkOutputFile_ContainsTheSameElementsAsInput() throws IOException {
-        FilesHandler.createFileWithRandomSymbols(2, testInputFilePath, 5, false, true);
+        FileUtils.createFileWithRandomSymbols(2,
+                                              testInputFilePath,
+                                              5,
+                                              false,
+                                              true);
+
         List<Integer> inputNums = readAllStringsAsNumsFromFile(testInputFilePath);
 
-        FilesHandler filesHandler = new FilesHandler(testInputFilePath, MAX_PART_SIZE);
-        filesHandler.divideIntoSortedParts();
-        filesHandler.mergingIntoOne(testOutputFilePath);
+        FileHandler fileHandler = new FileHandler(testInputFilePath, MAX_PART_SIZE);
+        fileHandler.divideIntoSortedParts();
+        fileHandler.mergingIntoOne(testOutputFilePath);
 
         List<Integer> outputNums = readAllStringsAsNumsFromFile(testOutputFilePath);
 
@@ -76,12 +86,17 @@ class SortFunctionalityTest {
 
     @Test
     void checkOutputStrings_SortedDueCaseInsensitiveOrder() throws IOException {
-        FilesHandler.createFileWithRandomSymbols(5, testInputFilePath, 9, true, false);
+        FileUtils.createFileWithRandomSymbols(5,
+                                              testInputFilePath,
+                                              9,
+                                              true,
+                                              false);
+
         List<String> inputStrings = readAllStringsFromFile(testInputFilePath);
 
-        FilesHandler filesHandler = new FilesHandler(testInputFilePath, MAX_PART_SIZE);
-        filesHandler.divideIntoSortedParts();
-        filesHandler.mergingIntoOne(testOutputFilePath);
+        FileHandler fileHandler = new FileHandler(testInputFilePath, MAX_PART_SIZE);
+        fileHandler.divideIntoSortedParts();
+        fileHandler.mergingIntoOne(testOutputFilePath);
 
         List<String> outputStrings = readAllStringsFromFile(testOutputFilePath);
 
