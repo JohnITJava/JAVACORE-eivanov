@@ -9,16 +9,32 @@ import java.io.InputStreamReader;
 
 @Slf4j
 public class ExternalSort {
-    public static final int MAX_PART_SIZE = 1; // Max part size in Mbs
+    public static final int MAX_PART_SIZE_MB = 1; // Max part size in Mbs
     public static final int PART_CHUNK_STRINGS_FACTOR = 10; //10(%) - size personal buffer chunk of all strings part
+    public static final String SORTED_OUTPUT_FILEPATH = "sortedOutput.txt";
 
     public static void main(String[] args) {
         log.info("--- Start application ---");
         ExternalSort externalSort = new ExternalSort();
         String inputPathFile = externalSort.enterPathToFile();
 
-        FileHandler fileHandler = new FileHandler(inputPathFile, MAX_PART_SIZE);
-        fileHandler.processInternalSorting();
+        FileHandler fileHandler = new FileHandler();
+
+        //TODO reminder https://www.linux.org.ru/forum/development/814859
+        int i = 0;
+        while (i++ < 5) {
+            try {
+                fileHandler.processInternalSorting(
+                        inputPathFile,
+                        SORTED_OUTPUT_FILEPATH,
+                        MAX_PART_SIZE_MB,
+                        PART_CHUNK_STRINGS_FACTOR
+                );
+                break;
+            } catch (OutOfMemoryError e) {
+                System.out.println("CATCH IT BITCH");
+            }
+        }
 
         log.info("--- Stop application ---");
     }

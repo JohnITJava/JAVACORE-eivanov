@@ -7,7 +7,6 @@ import lombok.var;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
-import java.io.EOFException;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileWriter;
@@ -28,60 +27,39 @@ import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
-import static com.gridu.exsort.ExternalSort.PART_CHUNK_STRINGS_FACTOR;
-
 @Slf4j
 @Getter
 @NoArgsConstructor
 public class FileHandler {
-    private static final String SORTED_OUTPUT_FILEPATH = "sortedOutput.txt";
+    private int partMiniBufferOfStringsSize;
 
-    private Path pathToInputFile;
-    private byte[] buffer;
-    private int partsCount;
-    private int partSizeMb;
-    private List<String> outputStrings = new LinkedList<>();
-    private Long fileSize;
-    private Long filePointer;
-    private List<BufferedReader> bafList;
-    private Set<BufferedReader> endedBafs;
-    private int partChunkStringsSize;
-    private SortedSet<MapEntry<Integer, String>> preOutputSortBuffer;
-    private MapEntry<Integer, String> minEntry;
-    private Map<Integer, LinkedList<String>> partsChunksStrings;
-
-    public FileHandler(String inputFilePath, int partSizeMb) {
-        this.buffer = new byte[partSizeMb * 1024 * 1024];
-        this.pathToInputFile = Paths.get(inputFilePath);
-        this.fileSize = pathToInputFile.toFile().length();
-        this.partSizeMb = partSizeMb;
-        this.partsCount = (int) Math.ceil((double) fileSize / (partSizeMb * 1024 * 1024));
-        bafList = new ArrayList<>(partsCount);
-        preOutputSortBuffer = new TreeSet<>(MapEntry.compareByValueInsensitiveOrder);
-    }
-
-    public void divideIntoSortedParts() {
+    private int divideIntoSortedParts(String inputPath, int maxPartInMb, int partChunkStringFactor) {
         log.info("Start divide big file in sorted chunks");
         RandomAccessFile raf = null;
+        Path pathToInputFile = Paths.get(inputPath);
+        Long fileSize = pathToInputFile.toFile().length();
+        int partsCount = (int) Math.ceil((double) fileSize / (maxPartInMb * 1024 * 1024));
+        boolean isLastPart;
 
         try {
-            raf = openFileForReading();
+            raf = openFileForReading(pathToInputFile);
         } catch (IOException e) {
             log.error(e.toString());
         }
 
         for (int i = 0; i < partsCount; i++) {
-            //TODO last part calculate here and send flag in readPartAsStrings
-            List<String> strings = readPartAsStrings(raf, i);
+            isLastPart = i == partsCount - 1;
+            List<String> strings = readPartAsStrings(raf, fileSize, maxPartInMb, isLastPart);
             sortCollectionInsensitive(strings);
             savePartStringsInFile(strings, i);
 
             //Calculate personal buffer part string array size, just once
             if (i == 0) {
-                partChunkStringsSize = (strings.size() * PART_CHUNK_STRINGS_FACTOR) / 100;
+                partMiniBufferOfStringsSize = (strings.size() * partChunkStringFactor) / 100;
             }
         }
-        closeFileStream(raf);
+        closeFileStream(raf, pathToInputFile);
+        return partsCount;
     }
 
     private static void sortCollectionInsensitive(List<String> list) {
@@ -89,14 +67,14 @@ public class FileHandler {
         list.sort(String.CASE_INSENSITIVE_ORDER);
     }
 
-    private RandomAccessFile openFileForReading() throws IOException {
+    private RandomAccessFile openFileForReading(Path pathToInputFile) throws IOException {
         log.info(String.format("Trying to get random access to [%s]", pathToInputFile));
         RandomAccessFile randomAccessFile = new RandomAccessFile(pathToInputFile.toFile(), "r");
         log.info("Return random access stream for: " + pathToInputFile);
         return randomAccessFile;
     }
 
-    private boolean closeFileStream(RandomAccessFile randomAccessFile) {
+    private boolean closeFileStream(RandomAccessFile randomAccessFile, Path pathToInputFile) {
         log.info(String.format("Trying to close random access stream to [%s]", pathToInputFile));
         try {
             randomAccessFile.close();
@@ -119,33 +97,62 @@ public class FileHandler {
         }
     }
 
-    private List<String> readPartAsStrings(RandomAccessFile randomAccessFile, int count) {
+    private List<String> readPartAsStrings(RandomAccessFile randomAccessFile,
+                                           Long fileSize,
+                                           int maxPartInMb,
+                                           boolean isLastPart) {
 
-        boolean lastPart = count == partsCount - 1;
+        //We have double expenses since keep bytes and strings in RAM
+        byte[] buffer = evaluateBufferSizeForReadingBytesAtOnce(randomAccessFile, fileSize, maxPartInMb, isLastPart);
+        List<String> outputStrings = new LinkedList<>();
 
-        if (lastPart) {
-            try {
-                filePointer = randomAccessFile.getFilePointer();
-            } catch (IOException e) {
-                log.error(e.toString());
-            }
-            buffer = new byte[(int) (fileSize - filePointer)];
-        }
-
-        log.info(String.format("Read in buffer next [%s] bytes", (partSizeMb * 1024 * 1024)));
+        log.info(String.format("Read in buffer next [%s] bytes", (buffer.length * 1024 * 1024)));
 
         try {
             randomAccessFile.read(buffer);
-        } catch (EOFException e) {
+        } catch (IOException e) {
             log.info("Reached END of file: " + e.toString());
+        }
+
+        //raf can trim our bytes in middle of string - we calculate back pointer
+        moveFilePointerBackIfStringWasDivided(randomAccessFile, buffer, isLastPart);
+
+        log.info("Starting convert buffer in outputStrings array list");
+
+        //Convert byte array in buffer as line
+        String line;
+        try (BufferedReader r = new BufferedReader(
+                new InputStreamReader(
+                        new ByteArrayInputStream(buffer), Charset.defaultCharset()))) {
+
+            for (line = r.readLine(); line != null; line = r.readLine()) {
+                if (!checkLineIsEmpty(line)) {
+                    outputStrings.add(line);
+                }
+            }
         } catch (IOException e) {
             log.error(e.toString());
         }
 
-        //TODO move in separate method
-        //raf can trim our bytes in middle of string - we calculate back pointer
+        removeLastStringIfLastSymbolInBufferIsNotLineBreaker(outputStrings, buffer, isLastPart);
+
+        log.info("Return outputStrings array");
+        return outputStrings;
+    }
+
+    private void removeLastStringIfLastSymbolInBufferIsNotLineBreaker(List<String> outputStrings,
+                                                                      byte[] buffer,
+                                                                      boolean isLastPart) {
+        if (!isLastPart && buffer[buffer.length - 1] != 10) {
+            outputStrings.remove(outputStrings.size() - 1);
+        }
+    }
+
+    private void moveFilePointerBackIfStringWasDivided(RandomAccessFile randomAccessFile,
+                                                       byte[] buffer,
+                                                       boolean isLastPart) {
         long bytesCountDueLineBreak = 0;
-        if (!lastPart && buffer[buffer.length - 1] != 10) {
+        if (!isLastPart && buffer[buffer.length - 1] != 10) {
             for (int i = buffer.length - 1; i > 0; i--) {
                 bytesCountDueLineBreak++;
                 if (buffer[i] == 10) { //10 - byte of line breaker
@@ -159,62 +166,50 @@ public class FileHandler {
                 log.error(e.toString());
             }
         }
+    }
 
-        //TODO 10Mb in buffer and 10 in list
-        outputStrings.clear();
-
-        log.info("Starting convert buffer in outputStrings array list");
-
-        //Convert byte array in buffer as line
-        BufferedReader r = new BufferedReader(
-                new InputStreamReader(
-                        new ByteArrayInputStream(buffer), Charset.defaultCharset()));
-
-        String line;
-        try {
-            for (line = r.readLine(); line != null; line = r.readLine()) {
-                if (!checkLineIsEmpty(line)) {
-                    outputStrings.add(line);
-                }
-            }
-        } catch (IOException e) {
-            log.error(e.toString());
-        } finally {
+    private byte[] evaluateBufferSizeForReadingBytesAtOnce(RandomAccessFile raf,
+                                                           Long fileSize,
+                                                           int maxPartInMb,
+                                                           boolean isLastPart) {
+        Long filePointer = null;
+        if (isLastPart) {
             try {
-                r.close();
+                filePointer = raf.getFilePointer();
             } catch (IOException e) {
                 log.error(e.toString());
             }
+            return new byte[(int) (fileSize - filePointer)];
+        } else {
+            return new byte[maxPartInMb * 1024 * 1024];
         }
-
-        log.info("Return outputStrings array");
-        if ((!lastPart && buffer[buffer.length - 1] != 10)) {
-            outputStrings.remove(outputStrings.size() - 1);
-        }
-        return outputStrings;
     }
 
     private static boolean checkLineIsEmpty(String line) {
         return line.trim().length() == 0;
     }
 
-    private void mergingIntoOne(String fileOutputPath) {
-        bafList = openStreamsForAllParts();
-        partsChunksStrings = getFirstStringsArraysFromAllParts(bafList);
-        outputStrings.clear();
+    private void mergingIntoOne(int partsCount, String outputPath) {
+        List<BufferedReader> bafList = openStreamsForAllParts(partsCount);
+        List<String> outputStrings = new LinkedList<>();
+        Set<BufferedReader> endedBafs = new LinkedHashSet<>();
+        SortedSet<MapEntry<Integer, String>> preOutputSortBuffer = new TreeSet<>(MapEntry.compareByValueInsensitiveOrder);
 
-        endedBafs = new LinkedHashSet<>();
-        FileWriter writerOutput = openOutputWriterStream(fileOutputPath);
+        Map<Integer, LinkedList<String>> partsWithMiniBufferStrings = getFirstStringsArraysFromAllParts(bafList,
+                                                                                                        endedBafs);
+        FileWriter writerOutput = openOutputWriterStream(outputPath);
 
         //First merging from all string chunks
-        firstFillingPreOutputBuffer(partsChunksStrings);
+        firstFillingPreOutputBuffer(partsWithMiniBufferStrings, preOutputSortBuffer);
 
         log.info("While buffered streams are not ended we continue merging");
         while (bafList.size() != endedBafs.size() & !preOutputSortBuffer.isEmpty()) {
 
             log.info("Begin fill outputStrings while parts are not empty");
 
-            for (int i = 0; i < partChunkStringsSize; i++) {
+            for (int i = 0; i < partMiniBufferOfStringsSize; i++) {
+                MapEntry<Integer, String> minEntry;
+
                 if (preOutputSortBuffer.isEmpty()) {
                     break;
                 }
@@ -224,7 +219,11 @@ public class FileHandler {
                 preOutputSortBuffer.removeIf(e -> e.getKey().equals(minEntry.getKey()));
 
                 //After deleting minimal entry we fill set with new one from parts chunks strings from definite chunk
-                fillPreOutputBufferWithNewEntry(partsChunksStrings, minEntry.getKey());
+                fillPreOutputBufferWithNewEntry(partsWithMiniBufferStrings,
+                                                minEntry.getKey(),
+                                                preOutputSortBuffer,
+                                                bafList,
+                                                endedBafs);
             }
 
             //OutputStrings array is full lets write
@@ -241,7 +240,8 @@ public class FileHandler {
         }
     }
 
-    private List<BufferedReader> openStreamsForAllParts() {
+    private List<BufferedReader> openStreamsForAllParts(int partsCount) {
+        List<BufferedReader> bafList = new ArrayList<>();
         log.info("Opening streams for all sorted chunks");
 
         BufferedReader baf = null;
@@ -301,12 +301,16 @@ public class FileHandler {
         outputList.clear();
     }
 
-    private void fillPreOutputBufferWithNewEntry(Map<Integer, LinkedList<String>> partsChunksStrings, int numNextChunk) {
+    private void fillPreOutputBufferWithNewEntry(Map<Integer, LinkedList<String>> partsChunksStrings,
+                                                 int numNextChunk,
+                                                 SortedSet<MapEntry<Integer, String>> preOutputSortBuffer,
+                                                 List<BufferedReader> bafList,
+                                                 Set<BufferedReader> endedBafs) {
         //If array is empty we should fill it with new values
         if (partsChunksStrings.get(numNextChunk).isEmpty()) {
 
             //If success via filling then ok or return from the method
-            if (fillPartChunkWithNewStrings(partsChunksStrings, numNextChunk)) {
+            if (fillPartChunkWithNewStrings(partsChunksStrings, numNextChunk, bafList, endedBafs)) {
                 preOutputSortBuffer.add(new MapEntry<>(numNextChunk, partsChunksStrings.get(numNextChunk).pollFirst()));
             }
         } else {
@@ -314,9 +318,12 @@ public class FileHandler {
         }
     }
 
-    private boolean fillPartChunkWithNewStrings(Map<Integer, LinkedList<String>> partsChunksStrings, int numNextChunk) {
+    private boolean fillPartChunkWithNewStrings(Map<Integer, LinkedList<String>> partsChunksStrings,
+                                                int numNextChunk,
+                                                List<BufferedReader> bafList,
+                                                Set<BufferedReader> endedBafs) {
         //Get new portion of strings
-        var strings = getStringsInChunkPart(bafList.get(numNextChunk));
+        var strings = getStringsInMiniBufferOfPart(bafList.get(numNextChunk), endedBafs);
 
         //Strings == null if stream for reading has reached end of file
         if (!strings.isEmpty()) {
@@ -327,9 +334,10 @@ public class FileHandler {
         return true;
     }
 
-    private void firstFillingPreOutputBuffer(Map<Integer, LinkedList<String>> partsChunksStrings) {
-        for (int i = 0; i < partsChunksStrings.size(); i++) {
-            String value = partsChunksStrings.get(i).pollFirst();
+    private void firstFillingPreOutputBuffer(Map<Integer, LinkedList<String>> partsWithMiniBufferStrings,
+                                             SortedSet<MapEntry<Integer, String>> preOutputSortBuffer) {
+        for (int i = 0; i < partsWithMiniBufferStrings.size(); i++) {
+            String value = partsWithMiniBufferStrings.get(i).pollFirst();
             MapEntry<Integer, String> el = new MapEntry<>(i, value);
             preOutputSortBuffer.add(el);
         }
@@ -338,30 +346,31 @@ public class FileHandler {
     /**
      * Getting hashMap with number of part and his buffer outputStrings array
      */
-    private Map<Integer, LinkedList<String>> getFirstStringsArraysFromAllParts(List<BufferedReader> bafList) {
+    private Map<Integer, LinkedList<String>> getFirstStringsArraysFromAllParts(List<BufferedReader> bafList,
+                                                                               Set<BufferedReader> endedBafs) {
         log.info("Get first strings arrays from all parts");
-        Map<Integer, LinkedList<String>> partsChunksStrings = new HashMap<>(bafList.size());
+        Map<Integer, LinkedList<String>> partsWithMiniBufferStrings = new HashMap<>(bafList.size());
         int partCount = 0;
 
         for (BufferedReader reader : bafList) {
-
-            LinkedList<String> partChunk = getStringsInChunkPart(reader);
-            partsChunksStrings.put(partCount++, partChunk);
+            LinkedList<String> miniBufferStringsOfPart = getStringsInMiniBufferOfPart(reader, endedBafs);
+            partsWithMiniBufferStrings.put(partCount++, miniBufferStringsOfPart);
         }
 
-        return partsChunksStrings;
+        return partsWithMiniBufferStrings;
     }
 
     /**
      * Return buffer outputStrings array from definite reader of the part
      */
-    private LinkedList<String> getStringsInChunkPart(BufferedReader reader) {
+    private LinkedList<String> getStringsInMiniBufferOfPart(BufferedReader reader,
+                                                            Set<BufferedReader> endedBafs) {
         log.info("Begin load outputStrings of part in his personal buf array");
 
         LinkedList<String> partChunk = new LinkedList<>();
         String string = null;
 
-        for (int i = 0; i < partChunkStringsSize; i++) {
+        for (int i = 0; i < partMiniBufferOfStringsSize; i++) {
 
             try {
                 string = reader.readLine();
@@ -379,8 +388,12 @@ public class FileHandler {
         return partChunk;
     }
 
-    public void processInternalSorting() {
-        divideIntoSortedParts();
-        mergingIntoOne(SORTED_OUTPUT_FILEPATH);
+    public void processInternalSorting(String inputPath,
+                                       String outputPath,
+                                       int maxPartSize,
+                                       int partChunkStringFactor ) throws OutOfMemoryError {
+
+        int partsCount = divideIntoSortedParts(inputPath, maxPartSize, partChunkStringFactor);
+        mergingIntoOne(partsCount, outputPath);
     }
 }

@@ -12,8 +12,10 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
 
-import static com.gridu.exsort.ExternalSort.MAX_PART_SIZE;
 import static org.assertj.core.api.Assertions.assertThat;
+
+import static com.gridu.exsort.ExternalSort.MAX_PART_SIZE_MB;
+import static com.gridu.exsort.ExternalSort.PART_CHUNK_STRINGS_FACTOR;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SortFunctionalityTest {
@@ -30,9 +32,8 @@ class SortFunctionalityTest {
 
         List<Integer> inputNums = readAllStringsAsNumsFromFile(testInputFilePath);
 
-        FileHandler fileHandler = new FileHandler(testInputFilePath, MAX_PART_SIZE);
-        fileHandler.divideIntoSortedParts();
-        fileHandler.mergingIntoOne(testOutputFilePath);
+        FileHandler fileHandler = new FileHandler();
+        fileHandler.processInternalSorting(testInputFilePath, testOutputFilePath, MAX_PART_SIZE_MB, PART_CHUNK_STRINGS_FACTOR);
 
         List<Integer> outputNums = readAllStringsAsNumsFromFile(testOutputFilePath);
 
@@ -74,9 +75,8 @@ class SortFunctionalityTest {
 
         List<Integer> inputNums = readAllStringsAsNumsFromFile(testInputFilePath);
 
-        FileHandler fileHandler = new FileHandler(testInputFilePath, MAX_PART_SIZE);
-        fileHandler.divideIntoSortedParts();
-        fileHandler.mergingIntoOne(testOutputFilePath);
+        FileHandler fileHandler = new FileHandler();
+        fileHandler.processInternalSorting(testInputFilePath, testOutputFilePath, MAX_PART_SIZE_MB, PART_CHUNK_STRINGS_FACTOR);
 
         List<Integer> outputNums = readAllStringsAsNumsFromFile(testOutputFilePath);
 
@@ -94,9 +94,8 @@ class SortFunctionalityTest {
 
         List<String> inputStrings = readAllStringsFromFile(testInputFilePath);
 
-        FileHandler fileHandler = new FileHandler(testInputFilePath, MAX_PART_SIZE);
-        fileHandler.divideIntoSortedParts();
-        fileHandler.mergingIntoOne(testOutputFilePath);
+        FileHandler fileHandler = new FileHandler();
+        fileHandler.processInternalSorting(testInputFilePath, testOutputFilePath, MAX_PART_SIZE_MB, PART_CHUNK_STRINGS_FACTOR);
 
         List<String> outputStrings = readAllStringsFromFile(testOutputFilePath);
 
