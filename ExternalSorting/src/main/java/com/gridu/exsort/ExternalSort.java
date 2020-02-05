@@ -15,26 +15,33 @@ public class ExternalSort {
 
     public static void main(String[] args) {
         log.info("--- Start application ---");
+
         ExternalSort externalSort = new ExternalSort();
         String inputPathFile = externalSort.enterPathToFile();
 
         FileHandler fileHandler = new FileHandler();
 
-        //TODO reminder https://www.linux.org.ru/forum/development/814859
-        int i = 0;
-        while (i++ < 5) {
-            try {
-                fileHandler.processInternalSorting(
-                        inputPathFile,
-                        SORTED_OUTPUT_FILEPATH,
-                        MAX_PART_SIZE_MB,
-                        PART_CHUNK_STRINGS_FACTOR
-                );
-                break;
-            } catch (OutOfMemoryError e) {
-                System.out.println("CATCH IT BITCH");
-            }
-        }
+//        int i = 0;
+//        while (i++ < 5) {
+//            try {
+//                fileHandler.processInternalSorting(
+//                        inputPathFile,
+//                        SORTED_OUTPUT_FILEPATH,
+//                        MAX_PART_SIZE_MB,
+//                        PART_CHUNK_STRINGS_FACTOR
+//                );
+//                break;
+//            } catch (OutOfMemoryError e) {
+//                System.out.println("CATCH IT BITCH");
+//            }
+//        }
+
+        fileHandler.processInternalSorting(
+                inputPathFile,
+                SORTED_OUTPUT_FILEPATH,
+                MAX_PART_SIZE_MB,
+                PART_CHUNK_STRINGS_FACTOR
+        );
 
         log.info("--- Stop application ---");
     }
