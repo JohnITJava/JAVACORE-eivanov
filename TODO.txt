@@ -7,3 +7,22 @@
 7. разбить методы на более мелкие по функциональной логике
 8. в цифрах показать, что 5% на х частей ! > RAM
 9. Более понятный нейминг
+
+
+=================================================================
+
+1. убрать endedBafs
+2. разделить fillPreOutputBufferWithNewEntry метод
+3. writeStringsOutput - собрать два трая ыв один
+4. outputStrings убрать под инициализацию в вайл цкил, очистить очистку
+5. bafs - buffs
+6. нейинг методов, разделение функциональности getStringsInMiniBufferOfPart
+7. объединить файнд и ремув
+	minEntry = preOutputSortBuffer.first()
+	&&
+	outputStrings.add(minEntry.getValue())
+	&&
+	preOutputSortBuffer.removeIf(e -> e.getKey().equals(minEntry.getKey()))
+
+8. divideIntoSortedParts вернуть 2 аргументаы
+9. readPartAsStrings - объединить два трая

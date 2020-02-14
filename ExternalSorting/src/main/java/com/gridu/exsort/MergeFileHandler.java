@@ -1,6 +1,5 @@
 package com.gridu.exsort;
 
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import lombok.var;
 
@@ -13,68 +12,63 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 
 @Slf4j
-@Getter
 public class MergeFileHandler {
-    private int partMiniBufferOfStringsSize;
+    private final int miniBufferChunkSize;
 
-    public MergeFileHandler(int partMiniBufferOfStringsSize) {
-        this.partMiniBufferOfStringsSize = partMiniBufferOfStringsSize;
+    public MergeFileHandler(int miniBufferChunkSize) {
+        this.miniBufferChunkSize = miniBufferChunkSize;
     }
 
     public void mergingIntoOne(int partsCount, String outputPath) {
-        List<BufferedReader> bafList = openStreamsForAllParts(partsCount);
-        List<String> outputStrings = new LinkedList<>();
-        Set<BufferedReader> endedBafs = new LinkedHashSet<>();
-        SortedSet<MapEntry<Integer, String>> preOutputSortBuffer = new TreeSet<>(MapEntry.compareByValueInsensitiveOrder);
-
-        Map<Integer, LinkedList<String>> partsWithMiniBufferStrings = getFirstStringsArraysFromAllParts(bafList, endedBafs);
+        List<BufferedReader> buffList = openStreamsForAllParts(partsCount);
+        TreeSet<MapEntry<Integer, String>> outputSortedBuffer = new TreeSet<>(MapEntry.compareByValueInsensitiveOrder);
+        Map<Integer, LinkedList<String>> chunksMapWithMiniBuffers = getFirstStringsArraysFromAllParts(buffList);
 
         FileWriter writerOutput = openOutputWriterStream(outputPath);
 
         //First merging from all string chunks
-        firstFillingPreOutputBuffer(partsWithMiniBufferStrings, preOutputSortBuffer);
+        firstFillingOutputSortedBuffer(chunksMapWithMiniBuffers, outputSortedBuffer);
 
         log.info("While buffered streams are not ended we continue merging");
-        while (bafList.size() != endedBafs.size() & !preOutputSortBuffer.isEmpty()) {
+        while (!outputSortedBuffer.isEmpty()) {
+            List<String> outputStrings = new LinkedList<>();
 
             log.info("Begin fill outputStrings while parts are not empty");
 
-            for (int i = 0; i < partMiniBufferOfStringsSize; i++) {
-                MapEntry<Integer, String> minEntry;
-
-                if (preOutputSortBuffer.isEmpty()) {
+            for (int i = 0; i < miniBufferChunkSize; i++) {
+                if (outputSortedBuffer.isEmpty()) {
                     break;
                 }
 
-                minEntry = preOutputSortBuffer.first();
+                MapEntry<Integer, String> minEntry = outputSortedBuffer.pollFirst();
                 outputStrings.add(minEntry.getValue());
-                preOutputSortBuffer.removeIf(e -> e.getKey().equals(minEntry.getKey()));
+                int numNextChunk = minEntry.getKey();
 
-                //After deleting minimal entry we fill set with new one from parts chunks strings from definite chunk
-                fillPreOutputBufferWithNewEntry(
-                        partsWithMiniBufferStrings,
-                        minEntry.getKey(),
-                        preOutputSortBuffer,
-                        bafList,
-                        endedBafs);
+                if (chunksMapWithMiniBuffers.get(numNextChunk).isEmpty()) {
+                    if (tryFillChunkBuffer(chunksMapWithMiniBuffers, numNextChunk, buffList)) {
+                        outputSortedBuffer.add(new MapEntry<>(numNextChunk, chunksMapWithMiniBuffers.get(numNextChunk).pollFirst()));
+                    }
+                } else {
+                    outputSortedBuffer.add(new MapEntry<>(numNextChunk, chunksMapWithMiniBuffers.get(numNextChunk).pollFirst()));
+                }
             }
-
             //OutputStrings array is full lets write
             if (!outputStrings.isEmpty()) {
                 writeStringsOutput(writerOutput, outputStrings);
             }
         }
+        closeStreams(buffList, writerOutput);
+    }
 
-        closeChunksStreams(endedBafs);
+    private void closeStreams(List<BufferedReader> buffList, FileWriter writerOutput) {
+        closeChunksStreams(buffList);
         try {
             writerOutput.close();
         } catch (IOException e) {
@@ -83,23 +77,23 @@ public class MergeFileHandler {
     }
 
     private List<BufferedReader> openStreamsForAllParts(int partsCount) {
-        List<BufferedReader> bafList = new ArrayList<>();
+        List<BufferedReader> buffList = new ArrayList<>();
         log.info("Opening streams for all sorted chunks");
 
-        BufferedReader baf = null;
+        BufferedReader buffReader = null;
 
         for (int i = 0; i < partsCount; i++) {
             String filePath = String.format("%s.txt", i);
 
             try {
-                baf = new BufferedReader(new InputStreamReader(new FileInputStream(filePath), StandardCharsets.UTF_8));
+                buffReader = new BufferedReader(new InputStreamReader(new FileInputStream(filePath), StandardCharsets.UTF_8));
             } catch (FileNotFoundException e) {
                 log.error(e.toString());
             }
 
-            bafList.add(baf);
+            buffList.add(buffReader);
         }
-        return bafList;
+        return buffList;
     }
 
     private FileWriter openOutputWriterStream(String filePath) {
@@ -113,12 +107,12 @@ public class MergeFileHandler {
         return writer;
     }
 
-    private void closeChunksStreams(Set<BufferedReader> bafs) {
+    private void closeChunksStreams(List<BufferedReader> buffs) {
         log.info("Closing random access file chunks streams");
 
-        for (BufferedReader baf : bafs) {
+        for (BufferedReader buff : buffs) {
             try {
-                baf.close();
+                buff.close();
             } catch (IOException e) {
                 log.error(e.toString());
             }
@@ -126,60 +120,51 @@ public class MergeFileHandler {
     }
 
     private void writeStringsOutput(FileWriter writer, List<String> outputList) {
-        for (int i = 0; i < outputList.size(); i++) {
-            try {
-                writer.write(outputList.get(i) + System.lineSeparator());
-            } catch (IOException e) {
-                log.error(e.toString());
-            }
-        }
-
         try {
-            writer.flush();
+            for (int i = 0; i < outputList.size(); i++) {
+                writer.write(outputList.get(i) + System.lineSeparator());
+                writer.flush();
+            }
         } catch (IOException e) {
             log.error(e.toString());
         }
-
-        outputList.clear();
     }
 
-    private void fillPreOutputBufferWithNewEntry(Map<Integer, LinkedList<String>> partsChunksStrings,
-                                                 int numNextChunk,
-                                                 SortedSet<MapEntry<Integer, String>> preOutputSortBuffer,
-                                                 List<BufferedReader> bafList,
-                                                 Set<BufferedReader> endedBafs) {
-        //If array is empty we should fill it with new values
-        if (partsChunksStrings.get(numNextChunk).isEmpty()) {
+//    private void fillOutputSortedBufferWithNewEntry(Map<Integer, LinkedList<String>> chunksMapWithMiniBuffers,
+//                                                    int numNextChunk,
+//                                                    SortedSet<MapEntry<Integer, String>> outputSortedBuffer,
+//                                                    List<BufferedReader> buffList) {
+//        //If array is empty we should fill it with new values
+//        if (chunksMapWithMiniBuffers.get(numNextChunk).isEmpty()) {
+//
+//            //If success via filling then ok or return from the method
+//            if (tryFillChunkBuffer(chunksMapWithMiniBuffers, numNextChunk, buffList)) {
+//                outputSortedBuffer.add(new MapEntry<>(numNextChunk, chunksMapWithMiniBuffers.get(numNextChunk).pollFirst()));
+//            }
+//        } else {
+//            outputSortedBuffer.add(new MapEntry<>(numNextChunk, chunksMapWithMiniBuffers.get(numNextChunk).pollFirst()));
+//        }
+//    }
 
-            //If success via filling then ok or return from the method
-            if (fillPartChunkWithNewStrings(partsChunksStrings, numNextChunk, bafList, endedBafs)) {
-                preOutputSortBuffer.add(new MapEntry<>(numNextChunk, partsChunksStrings.get(numNextChunk).pollFirst()));
-            }
-        } else {
-            preOutputSortBuffer.add(new MapEntry<>(numNextChunk, partsChunksStrings.get(numNextChunk).pollFirst()));
-        }
-    }
-
-    private boolean fillPartChunkWithNewStrings(Map<Integer, LinkedList<String>> partsChunksStrings,
-                                                int numNextChunk,
-                                                List<BufferedReader> bafList,
-                                                Set<BufferedReader> endedBafs) {
+    private boolean tryFillChunkBuffer(Map<Integer, LinkedList<String>> chunksMapWithMiniBuffers,
+                                       int numNextChunk,
+                                       List<BufferedReader> buffList) {
         //Get new portion of strings
-        var strings = getStringsInMiniBufferOfPart(bafList.get(numNextChunk), endedBafs);
+        var strings = getStringsInMiniBufferOfChunk(buffList.get(numNextChunk));
 
         //Strings == null if stream for reading has reached end of file
         if (!strings.isEmpty()) {
-            partsChunksStrings.put(numNextChunk, strings);
+            chunksMapWithMiniBuffers.put(numNextChunk, strings);
         } else {
             return false;
         }
         return true;
     }
 
-    private void firstFillingPreOutputBuffer(Map<Integer, LinkedList<String>> partsWithMiniBufferStrings,
-                                             SortedSet<MapEntry<Integer, String>> preOutputSortBuffer) {
-        for (int i = 0; i < partsWithMiniBufferStrings.size(); i++) {
-            String value = partsWithMiniBufferStrings.get(i).pollFirst();
+    private void firstFillingOutputSortedBuffer(Map<Integer, LinkedList<String>> chunksMapWithMiniBuffers,
+                                                SortedSet<MapEntry<Integer, String>> preOutputSortBuffer) {
+        for (int i = 0; i < chunksMapWithMiniBuffers.size(); i++) {
+            String value = chunksMapWithMiniBuffers.get(i).pollFirst();
             MapEntry<Integer, String> el = new MapEntry<>(i, value);
             preOutputSortBuffer.add(el);
         }
@@ -188,31 +173,29 @@ public class MergeFileHandler {
     /**
      * Getting hashMap with number of part and his buffer outputStrings array
      */
-    private Map<Integer, LinkedList<String>> getFirstStringsArraysFromAllParts(List<BufferedReader> bafList,
-                                                                               Set<BufferedReader> endedBafs) {
+    private Map<Integer, LinkedList<String>> getFirstStringsArraysFromAllParts(List<BufferedReader> buffList) {
         log.info("Get first strings arrays from all parts");
-        Map<Integer, LinkedList<String>> partsWithMiniBufferStrings = new HashMap<>(bafList.size());
+        Map<Integer, LinkedList<String>> chunksMapWithMiniBuffers = new HashMap<>(buffList.size());
         int partCount = 0;
 
-        for (BufferedReader reader : bafList) {
-            LinkedList<String> miniBufferStringsOfPart = getStringsInMiniBufferOfPart(reader, endedBafs);
-            partsWithMiniBufferStrings.put(partCount++, miniBufferStringsOfPart);
+        for (BufferedReader reader : buffList) {
+            LinkedList<String> miniBuffer = getStringsInMiniBufferOfChunk(reader);
+            chunksMapWithMiniBuffers.put(partCount++, miniBuffer);
         }
 
-        return partsWithMiniBufferStrings;
+        return chunksMapWithMiniBuffers;
     }
 
     /**
      * Return buffer outputStrings array from definite reader of the part
      */
-    private LinkedList<String> getStringsInMiniBufferOfPart(BufferedReader reader,
-                                                            Set<BufferedReader> endedBafs) {
+    private LinkedList<String> getStringsInMiniBufferOfChunk(BufferedReader reader) {
         log.info("Begin load outputStrings of part in his personal buf array");
 
-        LinkedList<String> partChunk = new LinkedList<>();
+        LinkedList<String> miniBuffer = new LinkedList<>();
         String string = null;
 
-        for (int i = 0; i < partMiniBufferOfStringsSize; i++) {
+        for (int i = 0; i < miniBufferChunkSize; i++) {
 
             try {
                 string = reader.readLine();
@@ -221,12 +204,11 @@ public class MergeFileHandler {
             }
 
             if (string == null) {
-                endedBafs.add(reader);
-                return partChunk;
+                return miniBuffer;
             } else {
-                partChunk.add(string);
+                miniBuffer.add(string);
             }
         }
-        return partChunk;
+        return miniBuffer;
     }
 }

@@ -1,5 +1,7 @@
 package com.gridu.exsort;
 
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,9 +22,8 @@ import java.util.List;
 @Getter
 @NoArgsConstructor
 public class DivideFileHandler {
-    private int partMiniBufferOfStringsSize;
 
-    public int divideIntoSortedParts(String inputPath, int maxPartInMb, int partChunkStringFactor) {
+    public DivideHandlerResults divideIntoSortedParts(String inputPath, int maxPartInMb, int partChunkStringFactor) {
         log.info("Start divide big file in sorted chunks");
         RandomAccessFile raf = null;
         Path pathToInputFile = Paths.get(inputPath);
@@ -36,6 +37,7 @@ public class DivideFileHandler {
             log.error(e.toString());
         }
 
+        int miniBufferChunkSize = 0;
         for (int i = 0; i < partsCount; i++) {
             isLastPart = i == partsCount - 1;
             List<String> strings = readPartAsStrings(raf, fileSize, maxPartInMb, isLastPart);
@@ -44,11 +46,11 @@ public class DivideFileHandler {
 
             //Calculate personal buffer part string array size, just once
             if (i == 0) {
-                partMiniBufferOfStringsSize = (strings.size() * partChunkStringFactor) / 100;
+                miniBufferChunkSize = (strings.size() * partChunkStringFactor) / 100;
             }
         }
         closeFileStream(raf, pathToInputFile);
-        return partsCount;
+        return new DivideHandlerResults(partsCount, miniBufferChunkSize);
     }
 
     private static void sortCollectionInsensitive(List<String> list) {
@@ -97,23 +99,19 @@ public class DivideFileHandler {
 
         log.info(String.format("Read in buffer next [%s] bytes", (buffer.length * 1024 * 1024)));
 
-        try {
-            randomAccessFile.read(buffer);
-        } catch (IOException e) {
-            log.info("Reached END of file: " + e.toString());
-        }
-
-        //raf can trim our bytes in middle of string - we calculate back pointer
-        moveFilePointerBackIfStringWasDivided(randomAccessFile, buffer, isLastPart);
-
-        log.info("Starting convert buffer in outputStrings array list");
-
-        //Convert byte array in buffer as line
-        String line;
         try (BufferedReader r = new BufferedReader(
                 new InputStreamReader(
                         new ByteArrayInputStream(buffer), Charset.defaultCharset()))) {
 
+            randomAccessFile.read(buffer);
+
+            //raf can trim our bytes in middle of string - we calculate back pointer
+            moveFilePointerBackIfStringWasDivided(randomAccessFile, buffer, isLastPart);
+
+            log.info("Starting convert buffer in outputStrings array list");
+
+            //Convert byte array in buffer as line
+            String line;
             for (line = r.readLine(); line != null; line = r.readLine()) {
                 if (!checkLineIsEmpty(line)) {
                     outputStrings.add(line);
@@ -176,5 +174,12 @@ public class DivideFileHandler {
 
     private static boolean checkLineIsEmpty(String line) {
         return line.trim().length() == 0;
+    }
+
+    @AllArgsConstructor
+    @Getter
+    public class DivideHandlerResults {
+        private final int partsCount;
+        private final int miniBufferChunkSize;
     }
 }

@@ -15,9 +15,11 @@ public class FileHandler {
                                        int partChunkStringFactor) throws OutOfMemoryError {
 
         DivideFileHandler dfh = new DivideFileHandler();
-        int partsCount = dfh.divideIntoSortedParts(inputPath, maxPartSize, partChunkStringFactor);
+        DivideFileHandler.DivideHandlerResults dhr = dfh.divideIntoSortedParts(inputPath,
+                                                                               maxPartSize,
+                                                                               partChunkStringFactor);
 
-        MergeFileHandler mfh = new MergeFileHandler(dfh.getPartMiniBufferOfStringsSize());
-        mfh.mergingIntoOne(partsCount, outputPath);
+        MergeFileHandler mfh = new MergeFileHandler(dhr.getMiniBufferChunkSize());
+        mfh.mergingIntoOne(dhr.getPartsCount(), outputPath);
     }
 }
