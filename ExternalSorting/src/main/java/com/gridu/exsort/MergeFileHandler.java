@@ -38,27 +38,9 @@ public class MergeFileHandler {
 
         log.info("While buffered streams are not ended we continue merging");
         while (!outputSortedBuffer.isEmpty()) {
-            List<String> outputStrings = new LinkedList<>();
-
             log.info("Begin fill outputStrings while parts are not empty");
 
-            for (int i = 0; i < miniBufferChunkSize; i++) {
-                if (outputSortedBuffer.isEmpty()) {
-                    break;
-                }
-
-                MapEntry<Integer, String> minEntry = outputSortedBuffer.pollFirst();
-                outputStrings.add(minEntry.getValue());
-                int numNextChunk = minEntry.getKey();
-
-                if (chunksMapWithMiniBuffers.get(numNextChunk).isEmpty()) {
-                    if (tryFillChunkBuffer(chunksMapWithMiniBuffers, numNextChunk, buffList)) {
-                        outputSortedBuffer.add(new MapEntry<>(numNextChunk, chunksMapWithMiniBuffers.get(numNextChunk).pollFirst()));
-                    }
-                } else {
-                    outputSortedBuffer.add(new MapEntry<>(numNextChunk, chunksMapWithMiniBuffers.get(numNextChunk).pollFirst()));
-                }
-            }
+            List<String> outputStrings = fillOutputStrings(buffList, outputSortedBuffer, chunksMapWithMiniBuffers);
             //OutputStrings array is full lets write
             if (!outputStrings.isEmpty()) {
                 writeStringsOutput(writerOutput, outputStrings);
@@ -67,12 +49,36 @@ public class MergeFileHandler {
         closeStreams(buffList, writerOutput);
     }
 
+    private List<String> fillOutputStrings(List<BufferedReader> buffList,
+                                           TreeSet<MapEntry<Integer, String>> outputSortedBuffer,
+                                           Map<Integer, LinkedList<String>> chunksMapWithMiniBuffers) {
+        List<String> outputStrings = new ArrayList<>();
+        for (int i = 0; i < miniBufferChunkSize; i++) {
+            if (outputSortedBuffer.isEmpty()) {
+                break;
+            }
+
+            MapEntry<Integer, String> minEntry = outputSortedBuffer.pollFirst();
+            outputStrings.add(minEntry.getValue());
+            int numNextChunk = minEntry.getKey();
+
+            if (chunksMapWithMiniBuffers.get(numNextChunk).isEmpty()) {
+                if (tryFillChunkBuffer(chunksMapWithMiniBuffers, numNextChunk, buffList)) {
+                    outputSortedBuffer.add(new MapEntry<>(numNextChunk, chunksMapWithMiniBuffers.get(numNextChunk).pollFirst()));
+                }
+            } else {
+                outputSortedBuffer.add(new MapEntry<>(numNextChunk, chunksMapWithMiniBuffers.get(numNextChunk).pollFirst()));
+            }
+        }
+        return outputStrings;
+    }
+
     private void closeStreams(List<BufferedReader> buffList, FileWriter writerOutput) {
         closeChunksStreams(buffList);
         try {
             writerOutput.close();
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error(e.getMessage());
         }
     }
 
@@ -129,22 +135,6 @@ public class MergeFileHandler {
             log.error(e.toString());
         }
     }
-
-//    private void fillOutputSortedBufferWithNewEntry(Map<Integer, LinkedList<String>> chunksMapWithMiniBuffers,
-//                                                    int numNextChunk,
-//                                                    SortedSet<MapEntry<Integer, String>> outputSortedBuffer,
-//                                                    List<BufferedReader> buffList) {
-//        //If array is empty we should fill it with new values
-//        if (chunksMapWithMiniBuffers.get(numNextChunk).isEmpty()) {
-//
-//            //If success via filling then ok or return from the method
-//            if (tryFillChunkBuffer(chunksMapWithMiniBuffers, numNextChunk, buffList)) {
-//                outputSortedBuffer.add(new MapEntry<>(numNextChunk, chunksMapWithMiniBuffers.get(numNextChunk).pollFirst()));
-//            }
-//        } else {
-//            outputSortedBuffer.add(new MapEntry<>(numNextChunk, chunksMapWithMiniBuffers.get(numNextChunk).pollFirst()));
-//        }
-//    }
 
     private boolean tryFillChunkBuffer(Map<Integer, LinkedList<String>> chunksMapWithMiniBuffers,
                                        int numNextChunk,
